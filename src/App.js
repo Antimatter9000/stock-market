@@ -1,9 +1,11 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import Investor from './Investor';
 import Stock from './Stock';
 import Market from './Market';
 
 const App = () => {
+    const [ stockPrice, setStockPrice ] = useState(0);
+
     const investors = useMemo(() => (
         [...Array(100)].map(_ => new Investor())
     ), []);
@@ -14,22 +16,19 @@ const App = () => {
 
     const market = useMemo(() => (
         new Market(stocks, investors)
-    ), []);
+    ), [investors, stocks]);
 
     useEffect(() => {
         let frame = 0;
         const interval = setInterval(() => {
             market.act(frame);
             const selectedStock = market.stocks.find(stock => stock.ticker === '$ROPE');
-            console.log(
-                `%c${selectedStock.ticker}: ${selectedStock.price}`,
-                "font-weight: bold; background-color: gold; color: black; padding: 3px; font-size: 1.3em; width: 100%;"
-            );
+            setStockPrice(selectedStock.price);
         }, 500);
         return () => clearInterval(interval);
-    }, []);
+    }, [market]);
 
-    return 'hello';
+    return <p>Stock price is <strong>{stockPrice}</strong></p>;
 }
 
 export default App;
