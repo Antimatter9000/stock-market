@@ -24,7 +24,7 @@ const App = () => {
             market.act(frame);
             const selectedStock = market.stocks.find(stock => stock.ticker === '$ROPE');
             setStockPrice(selectedStock.price);
-        }, 500);
+        }, 1000);
         return () => clearInterval(interval);
     }, [market]);
 
