@@ -6,6 +6,8 @@ export default class Position {
         this.budget = budget;
         this.remainingBudget = budget;
         this.investor = investor;
+        this.openValue = this.value;
+        console.info(`${this.investor.name} just opened an order for ${this.stock.ticker}`);
     }
 
     get value() {
@@ -21,31 +23,36 @@ export default class Position {
                     this.completeOrder(frame);
                 }
             } else if (this.status === 'CLOSING' && this.units <= 0) {
-                this.close(frame);
+                this.completeClose(frame);
             }
         }
     }
 
     completeOrder(frame) {
         this.openPrice = this.stock.price;
-        this.openValue = this.units/this.budget;
+        this.openValue = this.budget/this.units;
         this.openTime = frame;
-        this.unitsBought = this.units;
+        this.initialUnits = this.units;
 
         this.status = 'OPEN';
-        console.info(`${this.investor.name} just opened an order for ${this.unitsBought} units of ${this.stock.ticker} at ${this.openValue}`);
+        console.info(`${this.investor.name} just opened a position for ${this.initialUnits} units of ${this.stock.ticker} at ${this.openPrice}`);
         if (this.remainingBudget < 0) {
             console.error("You should not be able to spend money you don't have");
         }
     }
 
-    close(frame) {
+    close() {
+        this.status = 'CLOSING';
+        console.info(`${this.investor.name} just strated closing their position for ${this.stock.ticker}`);
+    }
+
+    completeClose(frame) {
         this.closingPrice = this.stock.price;
         this.closingValue = this.value;
         this.closingTime = frame;
 
         this.status = 'CLOSED';
-        console.info(`${this.investor.name} just sold ${this.unitsBought} units of ${this.stock.ticker} and made a ${this.closingPrice > this.openPrice ? 'profit' : 'loss'} of ${Math.abs(this.closingValue - this.openValue)}`);
+        console.info(`${this.investor.name} just sold ${this.initialUnits} units of ${this.stock.ticker} and made a ${this.closingPrice > this.openPrice ? 'profit' : 'loss'} of ${Math.abs(this.closingValue - this.openValue)}`);
         if (this.units < 0) {
             console.error("You should not be able to sell units you don't have");
         }

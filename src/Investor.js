@@ -1,20 +1,17 @@
-// import Chance from 'chance';
 import Position from './Position';
-
-// const chance = new Chance();
+import confidenceAffectors from './confidenceAffectors';
 
 export default class Investor {
-    constructor() {
-        // this.name = chance.name();
-        this.name = 'Bob';
+    constructor(name) {
+        this.name = name;
         this.cash = 10000; // this is the investor's entire life savings. Will they #YOLO it all?
         this.maxEquity = this.cash;
-        this.confidence = (Math.random() * 99) + 1;
+        this.confidence = (Math.random() * 99) + 100;
         this.history = [];
     }
 
     get bullishness() {
-        return this.confidence - 50; // negative bullishness = bearishness
+        return this.confidence - 100; // negative bullishness = bearishness
     }
 
     get equity() {
@@ -22,7 +19,9 @@ export default class Investor {
     }
 
     get stock() {
-        return this.positions.reduce((total, position) => total + position.units, 0);
+        return this.positions
+            .filter(position => position.status === 'OPEN')
+            .reduce((total, position) => total + position.units, 0);
     }
 
     get positions() {
@@ -54,19 +53,23 @@ export default class Investor {
     evaluate(stocks) {
         const defaultTimeframe = 1000/this.confidence;
         stocks.forEach(stock => {
-            const positions = this.positions.filter(position => position.stock.ticker === stock.ticker);
-            if (positions.length) {
-                // we have stock
-                // decide whether to buy or sell
-                positions.forEach(position => {
-                    // if investor has any positions, they are interested in a drop from the highest peak from which they opened their position
-                    const timeframe = this.currentFrame - position.openTime;
-                    this.decide(timeframe, stock, position);
-                });
+            if (stock.price > 0) {
+                const positions = this.positions.filter(position => position.stock.ticker === stock.ticker);
+                if (positions.length) {
+                    // we have stock
+                    // decide whether to buy or sell
+                    positions.forEach(position => {
+                        // if investor has any positions, they are interested in a drop from the highest peak from which they opened their position
+                        const timeframe = this.currentFrame - position.openTime;
+                        this.decide(timeframe, stock, position);
+                    });
+                }
+                // decide whether to buy
+                // really neurotic (1) will worry about a drop over 10 frames; non-neurotic (100) will worry about a drop over 1000 frames
+                this.decide(defaultTimeframe, stock);
+            } else {
+                console.info('stock as fallen to zero');
             }
-            // decide whether to buy
-            // really neurotic (1) will worry about a drop over 10 frames; non-neurotic (100) will worry about a drop over 1000 frames
-            this.decide(defaultTimeframe, stock);
         });
     }
 
@@ -120,31 +123,26 @@ export default class Investor {
             more neurotic investors think in short timeframes
             less neurotic investors think in large timeframes
         */
-
+        // console.log('confidence', this.confidence);
         const timeline = stock.history.slice(-timeframe);
-        const highestPrice = Math.max(timeline);
-        const dailyChange = (timeline[1] - stock.price)/timeline[1];
-        const changeSincePeak = (highestPrice - stock.price)/highestPrice;
+        // console.log(timeline);
+        const highestPrice = Math.max(...timeline);
+        const lowestPrice = Math.min(...timeline);
+        // console.log('curret', stock.price, 'highest', highestPrice);
+        const dailyChange = timeline.length > 1
+            ? (stock.price - timeline[1])/timeline[1]
+            : stock.price;
+        // console.log('ch', dailyChange);
+        const changeSincePeak = stock.price - highestPrice;
+        const changeSinceLow = stock.price - lowestPrice;
+        // console.log('changesincepeak', changeSincePeak);
         const timeSincePeak = timeline.reverse().findIndex(price => price === highestPrice); // this will tell us how many frames ago the change occurred
+        const timeSinceLow = timeline.reverse().findIndex(price => price === lowestPrice);
+        // console.log('tome', timeSincePeak);
 
-        // the more neurotic the investor, the more the change is likely to affect them
-        // for example, a 5% drop may lead a neurotic investor to sell everything, while a less neurotic one may see it as an opportunity to buy the dip
-        // should neurosis and bullishness be different measures?
-        // or would bullishness beget bullishness?
-        // - neurosis would affect the timeframe on which to be bullish
-        // - neurosis and bullishness could both affect the changeImpact here
-        // let's say dailyChange is 0.05
-        // -- hang on - surely the market should decide how bullish it should be; now the investor's neurosis may go up and down though
-        // --- not really, we still need to figure out timelines
-        // -- well we could say that more confident investors will care about longer timelines
-        // -- but if someone was really confident and then lost all their money, they may start to care more about shorter timelines
-        // -- we should rename neurosis to confidence and have that as the only measure
-        const changeImpact = dailyChange * this.confidence;
-        
-        // we want bullishness to start to increase once the stock gets low enough
-        // a sudden drop will cause increased bullishness
-        // a long decline will cause decreased bullishness at the start, but increased bullishness after a while
-        const changeSignificance = changeImpact / timeSincePeak;
+        this.confidence = Object.values(confidenceAffectors).reduce((latestConfidence, affector) => {
+            return affector(latestConfidence, highestPrice, lowestPrice, stock);
+        }, this.confidence);
 
 
         // DECISION
@@ -158,8 +156,10 @@ export default class Investor {
             const budget = proportionOfCashToUse * this.cash;
             this.openPosition(stock, budget);
         } else if (position && this.bullishness < -50) {
-            const proportionOfStockToSell = 100/((Math.abs(this.bullishness - 50))*2);
-            const amountToSell = proportionOfStockToSell * this.stock;
+            // bullishness of -100 means they will sell everything
+
+            // const proportionOfStockToSell = 100/((Math.abs(this.bullishness - 50))*2);
+            // const amountToSell = proportionOfStockToSell * this.stock;
             this.closePosition(position);
         } else {
             this.doNothing();
@@ -168,11 +168,16 @@ export default class Investor {
 
     openPosition(stock, budget) {
         this.cash -= budget;
-        this.isBuying = new Position(stock, budget);
+        this.isBuying = new Position(stock, budget, this);
     }
 
     closePosition(position) {
-        this.isSelling.push(position);
+        position.close();
+        if (this.isSelling?.length) {
+            this.isSelling.push(position);
+        } else {
+            this.isSelling = [position];
+        }
     }
 
     doNothing() {

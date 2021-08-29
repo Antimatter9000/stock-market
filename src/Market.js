@@ -1,13 +1,36 @@
-import Stock from './Stock';
+class Cache {
+    constructor() {
+        this.cache = {}
+    }
 
+    memoise(fn, deps) {
+        const depstr = deps.reduce((str, dep) => {
+            return str + dep.reduce((s, dep) => (
+                `s${dep.name}`
+            ), '');
+        }, '');
+        if (this.cache[depstr]) {
+            return this.cache[depstr];
+        } else {
+            const result = fn();
+            this.cache[depstr] = result;
+            return result;
+        }
+    }
+}
 
 export default class Market {
-    constructor(stocks, investors) {
+    constructor(companies, investors) {
         this.investors = investors;
-        this.stocks = stocks
-        this.stocks.forEach(stock => {
-            stock.IPO();
-        });
+        this.companies = companies;
+        this.companies.forEach(company => company.IPO());
+        this.orderCache = new Cache();
+        this.closingPositionCache = new Cache();
+    }
+
+    get stocks() {
+        // TODO: memoise
+        return this.companies.map(company => company.stock);
     }
 
     act(frame) {
@@ -19,25 +42,28 @@ export default class Market {
     }
 
     getOrders(ticker) {
-        // TODO: Memoise this value
-        return this.investors
-          .filter(investor => (
-              investor.isBuying?.status === 'ORDER'
-              && investor.isBuying?.stock.ticker === ticker
-          )).map(investor => investor.isBuying);
+        // return this.orderCache.memoise(() => {
+            return this.investors
+              .filter(investor => (
+                  investor.isBuying?.status === 'ORDER'
+                  && investor.isBuying?.stock.ticker === ticker
+              )).map(investor => investor.isBuying);
+        // }, [this.investors]);
     }
 
     getClosingPositions(ticker) {
         // TODO: Memoise this value
-        return this.investors
-          .filter(investor => investor.isSelling)
-          .reduce((positions, investor) => ([
-              ...positions,
-              ...investor.isSelling.filter(pos => (
-                  pos.stock.ticker === ticker
-                  && pos.status === 'OPEN'
-              ))
-          ]), []);
+        // return this.closingPositionCache.memoise(() => {
+            return [...this.investors, ...this.companies]
+              .filter(individual => individual.isSelling)
+              .reduce((positions, individual) => ([
+                  ...positions,
+                  ...individual.isSelling.filter(pos => (
+                      pos.stock.ticker === ticker
+                      && pos.status === 'CLOSING'
+                  ))
+              ]), []);
+        // }, [this.investors, this.companies]);
     }
 
     trade(stock) {
@@ -46,11 +72,10 @@ export default class Market {
         if (orders.length) {
             orders.forEach(order => {
                 const closingPositions = this.getClosingPositions(order.stock.ticker);
-
                 if (closingPositions.length) {
                     closingPositions.forEach(closingPosition => {
                         if (order.remainingBudget) {
-                            if (order.remainingBudget >= closingPosition.value) {
+                            if (order.remainingBudget >= closingPosition.value || order.units >= stock.circulation) {
                                 order.update(closingPosition.units, this.currentFrame);
                                 closingPosition.update(-closingPosition.units, this.currentFrame);
                             } else if (order.remainingBudget < closingPosition.value) {
