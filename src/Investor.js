@@ -1,5 +1,5 @@
 import Position from './Position';
-import confidenceAffectors from './confidenceAffectors';
+import motivators from './motivators';
 
 export default class Investor {
     constructor(name) {
@@ -7,7 +7,10 @@ export default class Investor {
         this.cash = 10000; // this is the investor's entire life savings. Will they #YOLO it all?
         this.maxEquity = this.cash;
         this.confidence = (Math.random() * 99) + 100;
+        this.positions = [];
         this.history = [];
+        this.isBuying = null;
+        this.isSelling = {};
     }
 
     get bullishness() {
@@ -15,20 +18,17 @@ export default class Investor {
     }
 
     get equity() {
-        return this.cash + this.positions.reduce((total, position) => total + position.value, 0);
+        return this.cash + this.positions.reduce((total, position) => (
+            position.status === 'OPEN'
+            ? total + position.value
+            : total
+        ), 0);
     }
 
     get stock() {
         return this.positions
             .filter(position => position.status === 'OPEN')
             .reduce((total, position) => total + position.units, 0);
-    }
-
-    get positions() {
-        return [
-            ...(this.isBuying ? [this.isBuying] : []),
-            ...(this.isSelling?.length ? this.isSelling : [])
-        ];
     }
 
     update(frame, stocks) {
@@ -47,12 +47,16 @@ export default class Investor {
             }, []);
         }
 
-        this.evaluate(stocks);
+        // if we have no unfulfilled orders, evaluate the stocks
+        if (!(this.isBuying?.status === 'ORDER')) {
+            this.evaluate(stocks);
+        }
     }
 
     evaluate(stocks) {
-        const defaultTimeframe = 1000/this.confidence;
+        // const defaultTimeframe = 1000/this.confidence;
         stocks.forEach(stock => {
+            const defaultTimeframe = stock.history.length;
             if (stock.price > 0) {
                 const positions = this.positions.filter(position => position.stock.ticker === stock.ticker);
                 if (positions.length) {
@@ -60,7 +64,8 @@ export default class Investor {
                     // decide whether to buy or sell
                     positions.forEach(position => {
                         // if investor has any positions, they are interested in a drop from the highest peak from which they opened their position
-                        const timeframe = this.currentFrame - position.openTime;
+                        // const timeframe = this.currentFrame - position.openTime;
+                        const timeframe = stock.history.length;
                         this.decide(timeframe, stock, position);
                     });
                 }
@@ -126,6 +131,7 @@ export default class Investor {
         // console.log('confidence', this.confidence);
         const timeline = stock.history.slice(-timeframe);
         // console.log(timeline);
+        console.log(timeline);
         const highestPrice = Math.max(...timeline);
         const lowestPrice = Math.min(...timeline);
         // console.log('curret', stock.price, 'highest', highestPrice);
@@ -140,9 +146,9 @@ export default class Investor {
         const timeSinceLow = timeline.reverse().findIndex(price => price === lowestPrice);
         // console.log('tome', timeSincePeak);
 
-        this.confidence = Object.values(confidenceAffectors).reduce((latestConfidence, affector) => {
-            return affector(latestConfidence, highestPrice, lowestPrice, stock);
-        }, this.confidence);
+        this.confidence = Object.values(motivators).reduce((b, motivator) => {
+            return motivator(b, highestPrice, lowestPrice, stock);
+        }, 0);
 
 
         // DECISION
@@ -152,8 +158,9 @@ export default class Investor {
             // if they are super bullish and not risk averse at all, they might
             // bullishness of 100 means they will YOLO it all
             // bullishness of 50 means they will use 1% of cash
-            const proportionOfCashToUse = 100/((this.bullishness - 50)*2);
+            const proportionOfCashToUse = 100/(this.bullishness*2);
             const budget = proportionOfCashToUse * this.cash;
+
             this.openPosition(stock, budget);
         } else if (position && this.bullishness < -50) {
             // bullishness of -100 means they will sell everything
@@ -168,16 +175,14 @@ export default class Investor {
 
     openPosition(stock, budget) {
         this.cash -= budget;
-        this.isBuying = new Position(stock, budget, this);
+        const position = new Position(stock, budget, this);
+        this.isBuying = position;
+        this.positions.push(position);
     }
 
     closePosition(position) {
         position.close();
-        if (this.isSelling?.length) {
-            this.isSelling.push(position);
-        } else {
-            this.isSelling = [position];
-        }
+        this.isSelling[position.id] = position;
     }
 
     doNothing() {

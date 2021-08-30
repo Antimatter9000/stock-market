@@ -17,7 +17,6 @@ const App = () => {
             }, 10
         ).build((error, data) => {
             if (error) console.error(error);
-            console.log('data', data);
             setInvestorNames(data.username.map(item => `${item.firstName} ${item.lastName}`));
         })
     }, []);
@@ -31,8 +30,8 @@ const App = () => {
     ), []);
 
     const market = useMemo(() => (
-        investors.length && new Market(companies, investors)
-    ), [investors, companies]);
+        investors.length ? new Market(companies, investors) : null
+    ), [investors]);
 
     useEffect(() => {
         if (market) {
@@ -43,7 +42,7 @@ const App = () => {
                 setStockPrice(selectedStock.price);
                 setInvestorList(market.investors);
                 frame++;
-            }, 2000);
+            }, 5000);
             return () => clearInterval(interval);
         }
     }, [market]);
@@ -51,7 +50,7 @@ const App = () => {
     return (
         <div>
             <p>Stock price is <strong>{stockPrice}</strong></p>
-            {investors.length ? investors.map(investor => (
+            {investorList.length ? investorList.map(investor => (
                 <li>{investor.name} {investor.stock} {Math.round(investor.bullishness)} {investor.isBuying ? '(buying)' : (investor.isSelling?.length ? '(selling)' : '')}</li>
             )) : <p>No investors</p>}
         </div>
